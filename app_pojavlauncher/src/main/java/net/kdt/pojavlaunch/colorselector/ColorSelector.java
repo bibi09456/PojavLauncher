@@ -1,6 +1,5 @@
 package net.kdt.pojavlaunch.colorselector;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -12,7 +11,6 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 
 import androidx.annotation.Nullable;
-import androidx.constraintlayout.widget.ConstraintLayout;
 
 import net.kdt.pojavlaunch.R;
 
@@ -160,6 +158,7 @@ public class ColorSelector implements HueSelectionListener, RectangleSelectionLi
     public void setAlphaEnabled(boolean alphaEnabled){
         mAlphaEnabled = alphaEnabled;
         mAlphaView.setVisibility(alphaEnabled ? View.VISIBLE : View.GONE);
+        mAlphaView.setAlpha(255);
     }
 
     private void notifyColorSelector(int color){

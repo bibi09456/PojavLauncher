@@ -604,6 +604,7 @@ struct PotatoBridge potatoBridge;
 #include "ctxbridges/osmesa_loader.h"
 int (*vtest_main_p) (int argc, char** argv);
 void (*vtest_swap_buffers_p) (void);
+void bigcore_set_affinity();
 
 #define RENDERER_VULKAN 0
 #define RENDERER_GL4ES 1
@@ -735,9 +736,14 @@ bool loadSymbolsVirGL() {
 
 int pojavInit() {
     ANativeWindow_acquire(pojav_environ->pojavWindow);
-    savedWidth = ANativeWindow_getWidth(pojav_environ->pojavWindow);
-    savedHeight = ANativeWindow_getHeight(pojav_environ->pojavWindow);
-    ANativeWindow_setBuffersGeometry(pojav_environ->pojavWindow,savedWidth,savedHeight,AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+    pojav_environ->savedWidth = ANativeWindow_getWidth(pojav_environ->pojavWindow);
+    pojav_environ->savedHeight = ANativeWindow_getHeight(pojav_environ->pojavWindow);
+    ANativeWindow_setBuffersGeometry(pojav_environ->pojavWindow,pojav_environ->savedWidth,pojav_environ->savedHeight,AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+
+    // Only affects GL4ES as of now
+    const char *forceVsync = getenv("FORCE_VSYNC");
+    if (strcmp(forceVsync, "true") == 0)
+        pojav_environ->force_vsync = true;
 
     return JNI_TRUE;
 }
@@ -863,9 +869,9 @@ jboolean pojavInit_OpenGL() {
             return 0;
         }
 
-        printf("OSMDroid: width=%i;height=%i, reserving %i bytes for frame buffer\n", savedWidth, savedHeight,
-               savedWidth * 4 * savedHeight);
-        gbuffer = malloc(savedWidth * 4 * savedHeight+1);
+        printf("OSMDroid: width=%i;height=%i, reserving %i bytes for frame buffer\n", pojav_environ->savedWidth, pojav_environ->savedHeight,
+               pojav_environ->savedWidth * 4 * pojav_environ->savedHeight);
+        gbuffer = malloc(pojav_environ->savedWidth * 4 * pojav_environ->savedHeight+1);
         if (gbuffer) {
             printf("OSMDroid: created frame buffer\n");
             return 1;
@@ -918,7 +924,7 @@ void pojavSwapBuffers() {
                 printf("Zink: attempted to swap buffers without context!\n");
                 break;
             }
-            OSMesaMakeCurrent_p(ctx,buf.bits,GL_UNSIGNED_BYTE,savedWidth,savedHeight);
+            OSMesaMakeCurrent_p(ctx,buf.bits,GL_UNSIGNED_BYTE,pojav_environ->savedWidth,pojav_environ->savedHeight);
             glFinish_p();
             ANativeWindow_unlockAndPost(pojav_environ->pojavWindow);
             //OSMesaMakeCurrent_p(ctx,gbuffer,GL_UNSIGNED_BYTE,savedWidth,savedHeight);
@@ -950,6 +956,7 @@ void* egl_make_current(void* window) {
 
 bool locked = false;
 void pojavMakeCurrent(void* window) {
+    if(getenv("POJAV_BIG_CORE_AFFINITY") != NULL) bigcore_set_affinity();
     //if(OSMesaGetCurrentContext_p() != NULL) {
     //    printf("OSMDroid: skipped context reset\n");
     //    return JNI_TRUE;
@@ -959,7 +966,7 @@ void pojavMakeCurrent(void* window) {
     }
     if (pojav_environ->config_renderer == RENDERER_VK_ZINK || pojav_environ->config_renderer == RENDERER_VIRGL) {
         printf("OSMDroid: making current\n");
-        OSMesaMakeCurrent_p((OSMesaContext)window,gbuffer,GL_UNSIGNED_BYTE,savedWidth,savedHeight);
+        OSMesaMakeCurrent_p((OSMesaContext)window,gbuffer,GL_UNSIGNED_BYTE,pojav_environ->savedWidth,pojav_environ->savedHeight);
         if (pojav_environ->config_renderer == RENDERER_VK_ZINK) {
             ANativeWindow_lock(pojav_environ->pojavWindow,&buf,NULL);
             OSMesaPixelStore_p(OSMESA_ROW_LENGTH,buf.stride);
@@ -1042,7 +1049,7 @@ Java_org_lwjgl_opengl_GL_getGraphicsBufferAddr(JNIEnv *env, jobject thiz) {
 JNIEXPORT jintArray JNICALL
 Java_org_lwjgl_opengl_GL_getNativeWidthHeight(JNIEnv *env, jobject thiz) {
     jintArray ret = (*env)->NewIntArray(env,2);
-    jint arr[] = {savedWidth, savedHeight};
+    jint arr[] = {pojav_environ->savedWidth, pojav_environ->savedHeight};
     (*env)->SetIntArrayRegion(env,ret,0,2,arr);
     return ret;
 }

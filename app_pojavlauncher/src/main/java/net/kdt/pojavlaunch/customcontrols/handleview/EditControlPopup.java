@@ -8,6 +8,7 @@ import static net.kdt.pojavlaunch.Tools.currentDisplayMetrics;
 import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Color;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
@@ -15,7 +16,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
-import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -31,16 +31,13 @@ import com.kdt.DefocusableScrollView;
 
 import net.kdt.pojavlaunch.EfficientAndroidLWJGLKeycode;
 import net.kdt.pojavlaunch.R;
-import net.kdt.pojavlaunch.colorselector.ColorSelectionListener;
 import net.kdt.pojavlaunch.colorselector.ColorSelector;
 import net.kdt.pojavlaunch.customcontrols.ControlData;
 import net.kdt.pojavlaunch.customcontrols.ControlDrawerData;
-import net.kdt.pojavlaunch.customcontrols.buttons.ControlButton;
 import net.kdt.pojavlaunch.customcontrols.buttons.ControlDrawer;
 import net.kdt.pojavlaunch.customcontrols.buttons.ControlInterface;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 
 /**
  * Class providing a sort of popup on top of a Layout, allowing to edit a given ControlButton
@@ -81,12 +78,12 @@ public class EditControlPopup {
     @SuppressLint("UseSwitchCompatOrMaterialCode")
     protected Switch mToggleSwitch, mPassthroughSwitch, mSwipeableSwitch;
     protected Spinner mOrientationSpinner;
-    protected Spinner[] mKeycodeSpinners = new Spinner[4];
+    protected final Spinner[] mKeycodeSpinners = new Spinner[4];
     protected SeekBar mStrokeWidthSeekbar, mCornerRadiusSeekbar, mAlphaSeekbar;
     protected TextView mStrokePercentTextView, mCornerRadiusPercentTextView, mAlphaPercentTextView;
     protected TextView mSelectBackgroundColor, mSelectStrokeColor;
     protected ArrayAdapter<String> mAdapter;
-    protected String[] mSpecialArray;
+    protected List<String> mSpecialArray;
 
     // Decorative textviews
     private TextView mOrientationTextView, mMappingTextView, mNameTextView, mCornerRadiusTextView;
@@ -101,7 +98,8 @@ public class EditControlPopup {
 
         mColorSelector = new ColorSelector(context, parent, null);
         mColorSelector.getRootView().setElevation(11);
-        mColorSelector.getRootView().setX(-context.getResources().getDimensionPixelOffset(R.dimen._230sdp));
+        mColorSelector.getRootView().setTranslationZ(11);
+        mColorSelector.getRootView().setX(-context.getResources().getDimensionPixelOffset(R.dimen._280sdp));
 
         mEditPopupAnimator = ObjectAnimator.ofFloat(mScrollView, "x", 0).setDuration(1000);
         mColorEditorAnimator = ObjectAnimator.ofFloat(mColorSelector.getRootView(), "x", 0).setDuration(1000);
@@ -110,7 +108,8 @@ public class EditControlPopup {
         mColorEditorAnimator.setInterpolator(decelerate);
 
         mScrollView.setElevation(10);
-        mScrollView.setX(-context.getResources().getDimensionPixelOffset(R.dimen._230sdp));
+        mScrollView.setTranslationZ(10);
+        mScrollView.setX(-context.getResources().getDimensionPixelOffset(R.dimen._280sdp));
 
         bindLayout();
         loadAdapter();
@@ -166,8 +165,7 @@ public class EditControlPopup {
         }
 
         mDisplayingColor = true;
-        if(color != -1)
-            mColorSelector.show(color);
+        mColorSelector.show(color == -1 ? Color.WHITE : color);
     }
 
     /** Slide out the layout */
@@ -213,10 +211,7 @@ public class EditControlPopup {
         //Initialize adapter for keycodes
         mAdapter = new ArrayAdapter<>(mRootView.getContext(), R.layout.item_centered_textview);
         mSpecialArray = ControlData.buildSpecialButtonArray();
-        for (int i = 0; i < mSpecialArray.length; i++) {
-            mSpecialArray[i] = "SPECIAL_" + mSpecialArray[i];
-        }
-        Collections.reverse(Arrays.asList(mSpecialArray));
+
         mAdapter.addAll(mSpecialArray);
         mAdapter.addAll(EfficientAndroidLWJGLKeycode.generateKeyName());
         mAdapter.setDropDownViewResource(android.R.layout.simple_list_item_single_choice);
@@ -247,7 +242,7 @@ public class EditControlPopup {
 
 
     public static void setPercentageText(TextView textView, int progress){
-        textView.setText(progress + " %");
+        textView.setText(textView.getContext().getString(R.string.percent_format, progress));
     }
 
     /* LOADING VALUES */
@@ -276,9 +271,9 @@ public class EditControlPopup {
 
         for(int i = 0; i< data.keycodes.length; i++){
             if (data.keycodes[i] < 0) {
-                mKeycodeSpinners[i].setSelection(data.keycodes[i] + mSpecialArray.length);
+                mKeycodeSpinners[i].setSelection(data.keycodes[i] + mSpecialArray.size());
             } else {
-                mKeycodeSpinners[i].setSelection(EfficientAndroidLWJGLKeycode.getIndexByValue(data.keycodes[i]) + mSpecialArray.length);
+                mKeycodeSpinners[i].setSelection(EfficientAndroidLWJGLKeycode.getIndexByValue(data.keycodes[i]) + mSpecialArray.size());
             }
         }
     }
@@ -305,7 +300,7 @@ public class EditControlPopup {
     }
 
     /** Load values for the joystick */
-    public void loadJoystickValues(ControlData data){
+    @SuppressWarnings("unused") public void loadJoystickValues(ControlData data){
         loadValues(data);
 
         mMappingTextView.setVisibility(GONE);
@@ -480,10 +475,10 @@ public class EditControlPopup {
                 public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                     // Side note, spinner listeners are fired later than all the other ones.
                     // Meaning the internalChanges bool is useless here.
-                    if (position < mSpecialArray.length) {
-                        mCurrentlyEditedButton.getProperties().keycodes[finalI] = mKeycodeSpinners[finalI].getSelectedItemPosition() - mSpecialArray.length;
+                    if (position < mSpecialArray.size()) {
+                        mCurrentlyEditedButton.getProperties().keycodes[finalI] = mKeycodeSpinners[finalI].getSelectedItemPosition() - mSpecialArray.size();
                     } else {
-                        mCurrentlyEditedButton.getProperties().keycodes[finalI] = EfficientAndroidLWJGLKeycode.getValueByIndex(mKeycodeSpinners[finalI].getSelectedItemPosition() - mSpecialArray.length);
+                        mCurrentlyEditedButton.getProperties().keycodes[finalI] = EfficientAndroidLWJGLKeycode.getValueByIndex(mKeycodeSpinners[finalI].getSelectedItemPosition() - mSpecialArray.size());
                     }
                 }
 

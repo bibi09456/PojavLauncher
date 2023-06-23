@@ -2,18 +2,15 @@ package org.lwjgl.glfw;
 
 import net.kdt.pojavlaunch.*;
 import android.content.*;
-import android.telecom.Call;
 import android.view.Choreographer;
-
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+
+import dalvik.annotation.optimization.CriticalNative;
 
 public class CallbackBridge {
     public static Choreographer sChoreographer = Choreographer.getInstance();
     private static boolean isGrabbing = false;
     private static final ArrayList<GrabListener> grabListeners = new ArrayList<>();
-
-    public static final int ANDROID_TYPE_GRAB_STATE = 0;
     
     public static final int CLIPBOARD_COPY = 2000;
     public static final int CLIPBOARD_PASTE = 2001;
@@ -22,8 +19,6 @@ public class CallbackBridge {
     public static volatile int windowWidth, windowHeight;
     public static volatile int physicalWidth, physicalHeight;
     public static float mouseX, mouseY;
-    public static StringBuilder DEBUG_STRING = new StringBuilder();
-    private static boolean threadAttached;
     public volatile static boolean holdingAlt, holdingCapslock, holdingCtrl,
             holdingNumlock, holdingShift;
 
@@ -39,24 +34,12 @@ public class CallbackBridge {
 
 
     public static void sendCursorPos(float x, float y) {
-        if (!threadAttached) {
-            nativeSetUseInputStackQueue(MainActivity.isInputStackCall);
-            threadAttached = CallbackBridge.nativeAttachThreadToOther(true, MainActivity.isInputStackCall);
-        }
-
-        DEBUG_STRING.append("CursorPos=").append(x).append(", ").append(y).append("\n");
         mouseX = x;
         mouseY = y;
         nativeSendCursorPos(mouseX, mouseY);
     }
-    
-    public static void sendPrepareGrabInitialPos() {
-        DEBUG_STRING.append("Prepare set grab initial posititon: ignored");
-        //sendMouseKeycode(-1, CallbackBridge.getCurrentMods(), false);
-    }
 
     public static void sendKeycode(int keycode, char keychar, int scancode, int modifiers, boolean isDown) {
-        DEBUG_STRING.append("KeyCode=").append(keycode).append(", Char=").append(keychar);
         // TODO CHECK: This may cause input issue, not receive input!
 /*
         if (!nativeSendCharMods((int) keychar, modifiers) || !nativeSendChar(keychar)) {
@@ -102,7 +85,6 @@ public class CallbackBridge {
     }
 
     public static void sendMouseKeycode(int button, int modifiers, boolean isDown) {
-        DEBUG_STRING.append("MouseKey=").append(button).append(", down=").append(isDown).append("\n");
         // if (isGrabbing()) DEBUG_STRING.append("MouseGrabStrace: " + android.util.Log.getStackTraceString(new Throwable()) + "\n");
         nativeSendMouseButton(button, isDown ? 1 : 0, modifiers);
     }
@@ -113,7 +95,6 @@ public class CallbackBridge {
     }
     
     public static void sendScroll(double xoffset, double yoffset) {
-        DEBUG_STRING.append("ScrollX=").append(xoffset).append(",ScrollY=").append(yoffset);
         nativeSendScroll(xoffset, yoffset);
     }
 
@@ -206,11 +187,19 @@ public class CallbackBridge {
         }
     }
 
-    private static void onGrabStateChanged(boolean grabbing) {
+    private static void onGrabStateChanged(final boolean grabbing) {
         isGrabbing = grabbing;
-        synchronized (grabListeners) {
-            for (GrabListener g : grabListeners) g.onGrabState(grabbing);
-        }
+        sChoreographer.postFrameCallbackDelayed((time) -> {
+            // If the grab re-changed, skip notify process
+            if(isGrabbing != grabbing) return;
+
+            System.out.println("Grab changed : " + grabbing);
+            synchronized (grabListeners) {
+                for (GrabListener g : grabListeners) g.onGrabState(grabbing);
+            }
+
+        }, 16);
+
     }
     public static void addGrabListener(GrabListener listener) {
         synchronized (grabListeners) {
@@ -224,21 +213,18 @@ public class CallbackBridge {
         }
     }
 
-    public static native void nativeSetUseInputStackQueue(boolean useInputStackQueue);
-    public static native boolean nativeAttachThreadToOther(boolean isAndroid, boolean isUsePushPoll);
+    @CriticalNative public static native void nativeSetUseInputStackQueue(boolean useInputStackQueue);
 
-    private static native boolean nativeSendChar(char codepoint);
+    @CriticalNative private static native boolean nativeSendChar(char codepoint);
     // GLFW: GLFWCharModsCallback deprecated, but is Minecraft still use?
-    private static native boolean nativeSendCharMods(char codepoint, int mods);
-    private static native void nativeSendKey(int key, int scancode, int action, int mods);
+    @CriticalNative private static native boolean nativeSendCharMods(char codepoint, int mods);
+    @CriticalNative private static native void nativeSendKey(int key, int scancode, int action, int mods);
     // private static native void nativeSendCursorEnter(int entered);
-    private static native void nativeSendCursorPos(float x, float y);
-    private static native void nativeSendMouseButton(int button, int action, int mods);
-    private static native void nativeSendScroll(double xoffset, double yoffset);
-    private static native void nativeSendScreenSize(int width, int height);
+    @CriticalNative private static native void nativeSendCursorPos(float x, float y);
+    @CriticalNative private static native void nativeSendMouseButton(int button, int action, int mods);
+    @CriticalNative private static native void nativeSendScroll(double xoffset, double yoffset);
+    @CriticalNative private static native void nativeSendScreenSize(int width, int height);
     public static native void nativeSetWindowAttrib(int attrib, int value);
-
-    public static native boolean nativeIsGrabbing();
     static {
         System.loadLibrary("pojavexec");
     }

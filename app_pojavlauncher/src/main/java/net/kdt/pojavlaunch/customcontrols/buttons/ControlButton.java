@@ -1,37 +1,47 @@
 package net.kdt.pojavlaunch.customcontrols.buttons;
 
-import android.annotation.SuppressLint;
-import android.graphics.*;
-import android.util.*;
-import android.view.*;
-import android.widget.*;
-
-
-import net.kdt.pojavlaunch.customcontrols.ControlData;
-import net.kdt.pojavlaunch.customcontrols.ControlLayout;
-import net.kdt.pojavlaunch.customcontrols.handleview.*;
-import net.kdt.pojavlaunch.*;
-
-import org.lwjgl.glfw.*;
-
 import static net.kdt.pojavlaunch.LwjglGlfwKeycode.GLFW_KEY_UNKNOWN;
 import static org.lwjgl.glfw.CallbackBridge.sendKeyPress;
 import static org.lwjgl.glfw.CallbackBridge.sendMouseButton;
+
+import android.annotation.SuppressLint;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.TextView;
+
+import net.kdt.pojavlaunch.LwjglGlfwKeycode;
+import net.kdt.pojavlaunch.MainActivity;
+import net.kdt.pojavlaunch.R;
+import net.kdt.pojavlaunch.customcontrols.ControlData;
+import net.kdt.pojavlaunch.customcontrols.ControlLayout;
+import net.kdt.pojavlaunch.customcontrols.handleview.EditControlPopup;
+import net.kdt.pojavlaunch.prefs.LauncherPreferences;
+
+import org.lwjgl.glfw.CallbackBridge;
 
 @SuppressLint({"ViewConstructor", "AppCompatCustomView"})
 public class ControlButton extends TextView implements ControlInterface {
     private final Paint mRectPaint = new Paint();
     protected ControlData mProperties;
+    private final ControlLayout mControlLayout;
 
     protected boolean mIsToggled = false;
     protected boolean mIsPointerOutOfBounds = false;
 
     public ControlButton(ControlLayout layout, ControlData properties) {
         super(layout.getContext());
+        mControlLayout = layout;
         setGravity(Gravity.CENTER);
-        setAllCaps(true);
+        setAllCaps(LauncherPreferences.PREF_BUTTON_ALL_CAPS);
         setTextColor(Color.WHITE);
         setPadding(4, 4, 4, 4);
+        setTextSize(14); // Nullify the default size setting
 
         //setOnLongClickListener(this);
 
@@ -98,14 +108,15 @@ public class ControlButton extends TextView implements ControlInterface {
     }
 
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getActionMasked()){
             case MotionEvent.ACTION_MOVE:
                 //Send the event to be taken as a mouse action
                 if(getProperties().passThruEnabled && CallbackBridge.isGrabbing()){
-                    MinecraftGLSurface v = getControlLayoutParent().findViewById(R.id.main_game_render_view);
-                    if (v != null) v.dispatchTouchEvent(event);
+                    View gameSurface = getControlLayoutParent().getGameSurface();
+                    if(gameSurface != null) gameSurface.dispatchTouchEvent(event);
                 }
 
                 //If out of bounds
@@ -144,8 +155,8 @@ public class ControlButton extends TextView implements ControlInterface {
             case MotionEvent.ACTION_CANCEL: // 3
             case MotionEvent.ACTION_POINTER_UP: // 6
                 if(getProperties().passThruEnabled){
-                    MinecraftGLSurface v = getControlLayoutParent().findViewById(R.id.main_game_render_view);
-                    if (v != null) v.dispatchTouchEvent(event);
+                    View gameSurface = getControlLayoutParent().getGameSurface();
+                    if(gameSurface != null) gameSurface.dispatchTouchEvent(event);
                 }
                 if(mIsPointerOutOfBounds) getControlLayoutParent().onTouch(this, event);
                 mIsPointerOutOfBounds = false;
@@ -164,6 +175,7 @@ public class ControlButton extends TextView implements ControlInterface {
 
 
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean triggerToggle(){
         //returns true a the toggle system is triggered
         if(mProperties.isToggle){
@@ -182,6 +194,7 @@ public class ControlButton extends TextView implements ControlInterface {
                 sendKeyPress(keycode, CallbackBridge.getCurrentMods(), isDown);
                 CallbackBridge.setModifiers(keycode, isDown);
             }else{
+                Log.i("punjabilauncher", "sendSpecialKey("+keycode+","+isDown+")");
                 sendSpecialKey(keycode, isDown);
             }
         }
@@ -219,6 +232,9 @@ public class ControlButton extends TextView implements ControlInterface {
 
             case ControlData.SPECIALBTN_SCROLLUP:
                 if (!isDown) CallbackBridge.sendScroll(0, -1d);
+                break;
+            case ControlData.SPECIALBTN_MENU:
+                mControlLayout.notifyAppMenu();
                 break;
         }
     }

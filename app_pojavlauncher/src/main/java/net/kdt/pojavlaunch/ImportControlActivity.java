@@ -2,12 +2,10 @@ package net.kdt.pojavlaunch;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.OpenableColumns;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -30,6 +28,7 @@ import java.io.OutputStream;
 /**
  * An activity dedicated to importing control files.
  */
+@SuppressWarnings("IOStreamConstructor")
 public class ImportControlActivity extends Activity {
 
     private Uri mUriData;
@@ -67,13 +66,17 @@ public class ImportControlActivity extends Activity {
         if(!mHasIntentChanged) return;
         mIsFileVerified = false;
         getUriData();
-        mEditText.setText(getNameFromURI(mUriData));
+        if(mUriData == null) {
+            finishAndRemoveTask();
+            return;
+        }
+        mEditText.setText(trimFileName(Tools.getFileName(this, mUriData)));
         mHasIntentChanged = false;
 
         //Import and verify thread
         //Kill the app if the file isn't valid.
         new Thread(() -> {
-            importControlFile("TMP_IMPORT_FILE");
+            importControlFile();
 
             if(verify())mIsFileVerified = true;
             else runOnUiThread(() -> {
@@ -116,23 +119,19 @@ public class ImportControlActivity extends Activity {
 
     /**
      * Copy a the file from the Intent data with a provided name into the controlmap folder.
-     * @param fileName The file name to use.
-     * @return whether the file was successfully imported
      */
-    private boolean importControlFile(String fileName){
+    private void importControlFile(){
         InputStream is;
         try {
             is = getContentResolver().openInputStream(mUriData);
-            OutputStream os = new FileOutputStream(Tools.CTRLMAP_PATH + "/" + fileName + ".json");
+            OutputStream os = new FileOutputStream(Tools.CTRLMAP_PATH + "/" + "TMP_IMPORT_FILE" + ".json");
             IOUtils.copy(is, os);
 
             os.close();
             is.close();
-            return true;
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return false;
     }
 
     /**
@@ -144,9 +143,7 @@ public class ImportControlActivity extends Activity {
         fileName = trimFileName(fileName);
 
         if(fileName.isEmpty()) return false;
-        if (FileUtils.exists(Tools.CTRLMAP_PATH + "/" + fileName + ".json")) return false;
-
-        return true;
+        return !FileUtils.exists(Tools.CTRLMAP_PATH + "/" + fileName + ".json");
     }
 
     /**
@@ -187,14 +184,6 @@ public class ImportControlActivity extends Activity {
             e.printStackTrace();
             return false;
         }
-    }
-
-    public String getNameFromURI(Uri uri) {
-        Cursor c = getContentResolver().query(uri, null, null, null, null);
-        c.moveToFirst();
-        String fileName = c.getString(c.getColumnIndex(OpenableColumns.DISPLAY_NAME));
-        c.close();
-        return trimFileName(fileName);
     }
 
 }

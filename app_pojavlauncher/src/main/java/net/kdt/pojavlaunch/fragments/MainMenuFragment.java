@@ -1,7 +1,11 @@
 package net.kdt.pojavlaunch.fragments;
 
+import static net.kdt.pojavlaunch.Tools.shareLog;
+
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
@@ -31,6 +35,7 @@ public class MainMenuFragment extends Fragment {
         Button mNewsButton = view.findViewById(R.id.news_button);
         Button mCustomControlButton = view.findViewById(R.id.custom_control_button);
         Button mInstallJarButton = view.findViewById(R.id.install_jar_button);
+        Button mShareLogsButton = view.findViewById(R.id.share_logs_button);
 
         ImageButton mEditProfileButton = view.findViewById(R.id.edit_profile_button);
         Button mPlayButton = view.findViewById(R.id.play_button);
@@ -46,6 +51,7 @@ public class MainMenuFragment extends Fragment {
 
         mPlayButton.setOnClickListener(v -> ExtraCore.setValue(ExtraConstants.LAUNCH_GAME, true));
 
+        mShareLogsButton.setOnClickListener((v) -> shareLog(requireContext()));
     }
     private void runInstallerWithConfirmation(boolean isCustomArgs) {
         if (ProgressKeeper.getTaskCount() == 0)

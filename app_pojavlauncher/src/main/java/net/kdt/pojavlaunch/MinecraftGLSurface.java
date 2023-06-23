@@ -1,6 +1,7 @@
 package net.kdt.pojavlaunch;
 
 import static net.kdt.pojavlaunch.MainActivity.touchCharInput;
+import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_DISABLE_SWAP_HAND;
 import static net.kdt.pojavlaunch.utils.MCOptionUtils.getMcScale;
 import static org.lwjgl.glfw.CallbackBridge.sendKeyPress;
 import static org.lwjgl.glfw.CallbackBridge.sendMouseButton;
@@ -25,30 +26,45 @@ import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
 import net.kdt.pojavlaunch.customcontrols.ControlLayout;
-import net.kdt.pojavlaunch.utils.MathUtils;
-
 import net.kdt.pojavlaunch.customcontrols.gamepad.Gamepad;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.utils.JREUtils;
 import net.kdt.pojavlaunch.utils.MCOptionUtils;
+import net.kdt.pojavlaunch.utils.MathUtils;
 
 import org.lwjgl.glfw.CallbackBridge;
+
+import fr.spse.gamepad_remapper.RemapperManager;
+import fr.spse.gamepad_remapper.RemapperView;
 
 /**
  * Class dealing with showing minecraft surface and taking inputs to dispatch them to minecraft
  */
-public class MinecraftGLSurface extends View implements GrabListener{
-    Handler uiThreadHandler = new Handler();
+public class MinecraftGLSurface extends View implements GrabListener {
     /* Gamepad object for gamepad inputs, instantiated on need */
     private Gamepad mGamepad = null;
-    /* Pointer Debug textview, used to show info about the pointer state */
-    private TextView mPointerDebugTextView;
+    /* The RemapperView.Builder object allows you to set which buttons to remap */
+    private final RemapperManager mInputManager = new RemapperManager(getContext(), new RemapperView.Builder(null)
+            .remapA(true)
+            .remapB(true)
+            .remapX(true)
+            .remapY(true)
+
+            .remapDpad(true)
+            .remapLeftJoystick(true)
+            .remapRightJoystick(true)
+            .remapStart(true)
+            .remapSelect(true)
+            .remapLeftShoulder(true)
+            .remapRightShoulder(true)
+            .remapLeftTrigger(true)
+            .remapRightTrigger(true));
+
     /* Resolution scaler option, allow downsizing a window */
     private final float mScaleFactor = LauncherPreferences.PREF_SCALE_FACTOR/100f;
     /* Sensitivity, adjusted according to screen size */
@@ -58,9 +74,11 @@ public class MinecraftGLSurface extends View implements GrabListener{
     private final TapDetector mDoubleTapDetector = new TapDetector(2, TapDetector.DETECTION_METHOD_DOWN);
     /* MC GUI scale, listened by MCOptionUtils */
     private int mGuiScale;
+    @SuppressWarnings("FieldCanBeLocal") // it can't, otherwise the weak reference will disappear
     private final MCOptionUtils.MCOptionListener mGuiScaleListener = () -> mGuiScale = getMcScale();
     /* Surface ready listener, used by the activity to launch minecraft */
     SurfaceReadyListener mSurfaceReadyListener = null;
+    final Object mSurfaceReadyListenerLock = new Object();
     /* View holding the surface, either a SurfaceView or a TextureView */
     View mSurface;
 
@@ -110,9 +128,7 @@ public class MinecraftGLSurface extends View implements GrabListener{
                     sendKeyPress(LwjglGlfwKeycode.GLFW_KEY_Q);
                     mHandler.sendEmptyMessageDelayed(MSG_DROP_ITEM_BUTTON_CHECK, 600);
                 }
-                return;
             }
-
         }
     };
 
@@ -131,13 +147,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
 
     /** Initialize the view and all its settings */
     public void start(){
-        // Add the pointer debug textview
-        mPointerDebugTextView = new TextView(getContext());
-        mPointerDebugTextView.setX(0);
-        mPointerDebugTextView.setY(0);
-        mPointerDebugTextView.setVisibility(GONE);
-        ((ViewGroup)getParent()).addView(mPointerDebugTextView);
-
         if(LauncherPreferences.PREF_USE_ALTERNATE_SURFACE){
             SurfaceView surfaceView = new SurfaceView(getContext());
             mSurface = surfaceView;
@@ -168,6 +177,7 @@ public class MinecraftGLSurface extends View implements GrabListener{
         }else{
             TextureView textureView = new TextureView(getContext());
             textureView.setOpaque(true);
+            textureView.setAlpha(1.0f);
             mSurface = textureView;
 
             textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
@@ -210,6 +220,7 @@ public class MinecraftGLSurface extends View implements GrabListener{
      * Does not cover the virtual mouse touchpad
      */
     @Override
+    @SuppressWarnings("accessibility")
     public boolean onTouchEvent(MotionEvent e) {
         // Kinda need to send this back to the layout
         if(((ControlLayout)getParent()).getModifiable()) return false;
@@ -296,13 +307,11 @@ public class MinecraftGLSurface extends View implements GrabListener{
                 break;
 
             case MotionEvent.ACTION_DOWN: // 0
-                CallbackBridge.sendPrepareGrabInitialPos();
-
                 hudKeyHandled = handleGuiBar((int)e.getX(), (int) e.getY());
                 boolean isTouchInHotbar = hudKeyHandled != -1;
                 if (isTouchInHotbar) {
                     sendKeyPress(hudKeyHandled);
-                    if(hasDoubleTapped && hudKeyHandled == mLastHotbarKey){
+                    if(hasDoubleTapped && hudKeyHandled == mLastHotbarKey && !PREF_DISABLE_SWAP_HAND){
                         //Prevent double tapping Event on two different slots
                         sendKeyPress(LwjglGlfwKeycode.GLFW_KEY_F);
                     }
@@ -380,9 +389,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
         // Actualise the pointer count
         mLastPointerCount = e.getPointerCount();
 
-        //debugText.setText(CallbackBridge.DEBUG_STRING.toString());
-        CallbackBridge.DEBUG_STRING.setLength(0);
-
         return true;
     }
 
@@ -399,7 +405,7 @@ public class MinecraftGLSurface extends View implements GrabListener{
                 mGamepad = new Gamepad(this, event.getDevice());
             }
 
-            mGamepad.update(event);
+            mInputManager.handleMotionEventInput(getContext(), event, mGamepad);
             return true;
         }
 
@@ -410,16 +416,18 @@ public class MinecraftGLSurface extends View implements GrabListener{
             break;
         }
         if(mouseCursorIndex == -1) return false; // we cant consoom that, theres no mice!
+
+        // Make sure we grabbed the mouse if necessary
+        updateGrabState(CallbackBridge.isGrabbing());
+
         switch(event.getActionMasked()) {
             case MotionEvent.ACTION_HOVER_MOVE:
                 CallbackBridge.mouseX = (event.getX(mouseCursorIndex) * mScaleFactor);
                 CallbackBridge.mouseY = (event.getY(mouseCursorIndex) * mScaleFactor);
                 CallbackBridge.sendCursorPos(CallbackBridge.mouseX, CallbackBridge.mouseY);
-                //debugText.setText(CallbackBridge.DEBUG_STRING.toString());
-                CallbackBridge.DEBUG_STRING.setLength(0);
                 return true;
             case MotionEvent.ACTION_SCROLL:
-                CallbackBridge.sendScroll((double) event.getAxisValue(MotionEvent.AXIS_VSCROLL), (double) event.getAxisValue(MotionEvent.AXIS_HSCROLL));
+                CallbackBridge.sendScroll((double) event.getAxisValue(MotionEvent.AXIS_HSCROLL), (double) event.getAxisValue(MotionEvent.AXIS_VSCROLL));
                 return true;
             case MotionEvent.ACTION_BUTTON_PRESS:
                 return sendMouseButtonUnconverted(event.getActionButton(),true);
@@ -431,7 +439,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
     }
 
     //TODO MOVE THIS SOMEWHERE ELSE
-    private boolean debugErrored = false;
     /** The input event for mouse with a captured pointer */
     @RequiresApi(26)
     @Override
@@ -439,33 +446,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
         CallbackBridge.mouseX += (e.getX()* mScaleFactor);
         CallbackBridge.mouseY += (e.getY()* mScaleFactor);
 
-        if (mPointerDebugTextView.getVisibility() == View.VISIBLE && !debugErrored) {
-            StringBuilder builder = new StringBuilder();
-            try {
-                builder.append("PointerCapture debug\n");
-                builder.append("MotionEvent=").append(e.getActionMasked()).append("\n");
-                builder.append("PressingBtn=").append(MotionEvent.class.getDeclaredMethod("buttonStateToString").invoke(null, e.getButtonState())).append("\n\n");
-
-                builder.append("PointerX=").append(e.getX()).append("\n");
-                builder.append("PointerY=").append(e.getY()).append("\n");
-                builder.append("RawX=").append(e.getRawX()).append("\n");
-                builder.append("RawY=").append(e.getRawY()).append("\n\n");
-
-                builder.append("XPos=").append(CallbackBridge.mouseX).append("\n");
-                builder.append("YPos=").append(CallbackBridge.mouseY).append("\n\n");
-                builder.append("MovingX=").append(getMoving(e.getX(), true)).append("\n");
-                builder.append("MovingY=").append(getMoving(e.getY(), false)).append("\n");
-            } catch (Throwable th) {
-                debugErrored = true;
-                builder.append("Error getting debug. The debug will be stopped!\n").append(Log.getStackTraceString(th));
-            } finally {
-                mPointerDebugTextView.setText(builder.toString());
-                builder.setLength(0);
-            }
-        }
-
-        mPointerDebugTextView.setText(CallbackBridge.DEBUG_STRING.toString());
-        CallbackBridge.DEBUG_STRING.setLength(0);
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_MOVE:
                 CallbackBridge.sendCursorPos(CallbackBridge.mouseX, CallbackBridge.mouseY);
@@ -519,28 +499,18 @@ public class MinecraftGLSurface extends View implements GrabListener{
                 mGamepad = new Gamepad(this, event.getDevice());
             }
 
-            mGamepad.update(event);
+            mInputManager.handleKeyEventInput(getContext(), event, mGamepad);
             return true;
         }
 
         int index = EfficientAndroidLWJGLKeycode.getIndexByKey(eventKeycode);
-        if(index >= 0) {
-            //Toast.makeText(this,"THIS IS A KEYBOARD EVENT !", Toast.LENGTH_SHORT).show();
+        if(EfficientAndroidLWJGLKeycode.containsIndex(index)) {
             EfficientAndroidLWJGLKeycode.execKey(event, index);
             return true;
         }
 
         // Some events will be generated an infinite number of times when no consumed
-        if((event.getFlags() & KeyEvent.FLAG_FALLBACK) == KeyEvent.FLAG_FALLBACK) return true;
-
-        return false;
-    }
-
-    /** Get the mouse direction as a string */
-    private String getMoving(float pos, boolean xOrY) {
-        if (pos == 0) return "STOPPED";
-        if (pos > 0) return xOrY ? "RIGHT" : "DOWN";
-        return xOrY ? "LEFT" : "UP";
+        return (event.getFlags() & KeyEvent.FLAG_FALLBACK) == KeyEvent.FLAG_FALLBACK;
     }
 
     /** Convert the mouse button, then send it
@@ -586,11 +556,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
         return (int)((mGuiScale * input)/ mScaleFactor);
     }
 
-    /** Toggle the pointerDebugText visibility state */
-    public void togglepointerDebugging() {
-        mPointerDebugTextView.setVisibility(mPointerDebugTextView.getVisibility() == View.GONE ? View.VISIBLE : View.GONE);
-    }
-
     /** Called when the size need to be set at any point during the surface lifecycle **/
     public void refreshSize(){
         windowWidth = Tools.getDisplayFriendlyRes(Tools.currentDisplayMetrics.widthPixels, mScaleFactor);
@@ -612,9 +577,6 @@ public class MinecraftGLSurface extends View implements GrabListener{
         }
 
         CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight);
-        //getMcScale();
-        //Toast.makeText(getContext(), "width: " + width, Toast.LENGTH_SHORT).show();
-        //Toast.makeText(getContext(), "height: " + height, Toast.LENGTH_SHORT).show();
 
     }
 
@@ -634,8 +596,8 @@ public class MinecraftGLSurface extends View implements GrabListener{
         new Thread(() -> {
             try {
                 // Wait until the listener is attached
-                while (mSurfaceReadyListener == null){
-                    Thread.sleep(100);
+                synchronized(mSurfaceReadyListenerLock) {
+                    if(mSurfaceReadyListener == null) mSurfaceReadyListenerLock.wait();
                 }
 
                 mSurfaceReadyListener.isReady();
@@ -647,20 +609,24 @@ public class MinecraftGLSurface extends View implements GrabListener{
 
     @Override
     public void onGrabState(boolean isGrabbing) {
-        uiThreadHandler.post(()->updateGrabState(isGrabbing));
+        post(()->updateGrabState(isGrabbing));
     }
 
     private void updateGrabState(boolean isGrabbing) {
-        if(MainActivity.isAndroid8OrHigher()) {
-            if (isGrabbing && !hasPointerCapture()) {
+        if(!MainActivity.isAndroid8OrHigher()) return;
+
+        boolean hasPointerCapture = hasPointerCapture();
+        if(isGrabbing){
+            if(!hasPointerCapture) {
                 requestFocus();
                 requestPointerCapture();
             }
+            return;
+        }
 
-            if (!isGrabbing && hasPointerCapture()) {
-                releasePointerCapture();
-                clearFocus();
-            }
+        if(hasPointerCapture) {
+            releasePointerCapture();
+            clearFocus();
         }
     }
 
@@ -670,7 +636,9 @@ public class MinecraftGLSurface extends View implements GrabListener{
     }
 
     public void setSurfaceReadyListener(SurfaceReadyListener listener){
-        mSurfaceReadyListener = listener;
-
+        synchronized (mSurfaceReadyListenerLock) {
+            mSurfaceReadyListener = listener;
+            mSurfaceReadyListenerLock.notifyAll();
+        }
     }
 }

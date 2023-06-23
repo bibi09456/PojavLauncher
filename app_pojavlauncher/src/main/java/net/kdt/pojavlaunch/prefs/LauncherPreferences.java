@@ -3,15 +3,13 @@ package net.kdt.pojavlaunch.prefs;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.Build.VERSION_CODES.P;
 
+import static net.kdt.pojavlaunch.Architecture.is32BitsDevice;
+
 import android.app.Activity;
 import android.content.*;
 import android.graphics.Rect;
 import android.os.Build;
 import android.util.Log;
-import android.view.WindowInsets;
-import android.view.WindowMetrics;
-
-import androidx.core.view.WindowInsetsCompat;
 
 import net.kdt.pojavlaunch.*;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
@@ -35,21 +33,32 @@ public class LauncherPreferences {
 	public static String PREF_DEFAULTCTRL_PATH = Tools.CTRLDEF_FILE;
 	public static String PREF_CUSTOM_JAVA_ARGS;
     public static boolean PREF_FORCE_ENGLISH = false;
-    public static String PREF_VERSION_REPOS = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    public static final String PREF_VERSION_REPOS = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     public static boolean PREF_CHECK_LIBRARY_SHA = true;
     public static boolean PREF_DISABLE_GESTURES = false;
+    public static boolean PREF_DISABLE_SWAP_HAND = false;
     public static float PREF_MOUSESPEED = 1f;
     public static int PREF_RAM_ALLOCATION;
     public static String PREF_DEFAULT_RUNTIME;
-    public static int PREF_CONTROL_TOP_OFFSET = 0;
-    public static int PREF_CONTROL_RIGHT_OFFSET = 0;
-    public static int PREF_CONTROL_BOTTOM_OFFSET = 0;
-    public static int PREF_CONTROL_LEFT_OFFSET = 0;
     public static boolean PREF_SUSTAINED_PERFORMANCE = false;
     public static boolean PREF_VIRTUAL_MOUSE_START = false;
     public static boolean PREF_ARC_CAPES = false;
     public static boolean PREF_USE_ALTERNATE_SURFACE = true;
+    public static boolean PREF_JAVA_SANDBOX = true;
     public static int PREF_SCALE_FACTOR = 100;
+    public static boolean PREF_ENABLE_GYRO = false;
+    public static float PREF_GYRO_SENSITIVITY = 1f;
+    public static int PREF_GYRO_SAMPLE_RATE = 16;
+
+    public static boolean PREF_GYRO_INVERT_X = false;
+
+    public static boolean PREF_GYRO_INVERT_Y = false;
+    public static boolean PREF_FORCE_VSYNC = false;
+
+    public static boolean PREF_BUTTON_ALL_CAPS = true;
+    public static boolean PREF_DUMP_SHADERS = false;
+    public static float PREF_DEADZONE_SCALE = 1f;
+    public static boolean PREF_BIG_CORE_AFFINITY = false;
 
 
     public static void loadPreferences(Context ctx) {
@@ -72,52 +81,32 @@ public class LauncherPreferences {
         PREF_FORCE_ENGLISH = DEFAULT_PREF.getBoolean("force_english", false);
         PREF_CHECK_LIBRARY_SHA = DEFAULT_PREF.getBoolean("checkLibraries",true);
         PREF_DISABLE_GESTURES = DEFAULT_PREF.getBoolean("disableGestures",false);
+        PREF_DISABLE_SWAP_HAND = DEFAULT_PREF.getBoolean("disableDoubleTap", false);
         PREF_RAM_ALLOCATION = DEFAULT_PREF.getInt("allocation", findBestRAMAllocation(ctx));
         PREF_CUSTOM_JAVA_ARGS = DEFAULT_PREF.getString("javaArgs", "");
-        PREF_CONTROL_TOP_OFFSET = DEFAULT_PREF.getInt("controlTopOffset", 0);
-        PREF_CONTROL_RIGHT_OFFSET = DEFAULT_PREF.getInt("controlRightOffset", 0);
-        PREF_CONTROL_BOTTOM_OFFSET = DEFAULT_PREF.getInt("controlBottomOffset", 0);
-        PREF_CONTROL_LEFT_OFFSET = DEFAULT_PREF.getInt("controlLeftOffset", 0);
         PREF_SUSTAINED_PERFORMANCE = DEFAULT_PREF.getBoolean("sustainedPerformance", false);
         PREF_VIRTUAL_MOUSE_START = DEFAULT_PREF.getBoolean("mouse_start", false);
         PREF_ARC_CAPES = DEFAULT_PREF.getBoolean("arc_capes",false);
         PREF_USE_ALTERNATE_SURFACE = DEFAULT_PREF.getBoolean("alternate_surface", false);
+        PREF_JAVA_SANDBOX = DEFAULT_PREF.getBoolean("java_sandbox", true);
         PREF_SCALE_FACTOR = DEFAULT_PREF.getInt("resolutionRatio", 100);
-
-/*
-        if (PREF_CUSTOM_JAVA_ARGS.isEmpty()) {
-            String DEFAULT_JAVA_ARGS = "";
-                "-Xms" + (androidHeap > 800 ? 800 : androidHeap) + "m " +
-                // (32bit) More than 800mb may make JVM not allocateable and crash
-                "-Xmx" + (doubleAndroidHeap > 800 ? 800 : doubleAndroidHeap) + "m" +
-                "-XX:+UseG1GC " +
-                "-XX:+ParallelRefProcEnabled " +
-                "-XX:MaxGCPauseMillis=200 " +
-                "-XX:+UnlockExperimentalVMOptions " +
-                "-XX:+AlwaysPreTouch " +
-		"-XX:G1NewSizePercent=30 " +
-		"-XX:G1MaxNewSizePercent=40 " +
-		"-XX:G1HeapRegionSize=8M " +
-		"-XX:G1ReservePercent=20 " +
-		"-XX:G1HeapWastePercent=5 " +
-	        "-XX:G1MixedGCCountTarget=4 " +
-		"-XX:InitiatingHeapOccupancyPercent=15 " +
-		"-XX:G1MixedGCLiveThresholdPercent=90 " +
-		"-XX:G1RSetUpdatingPauseTimePercent=5 " +
-		"-XX:SurvivorRatio=32 " +
-		"-XX:+PerfDisableSharedMem " +
-                "-XX:MaxTenuringThreshold=1";
-            PREF_CUSTOM_JAVA_ARGS = DEFAULT_JAVA_ARGS;
-            DEFAULT_PREF.edit().putString("javaArgs", DEFAULT_JAVA_ARGS).commit();
-        }
-*/
+        PREF_ENABLE_GYRO = DEFAULT_PREF.getBoolean("enableGyro", false);
+        PREF_GYRO_SENSITIVITY = ((float)DEFAULT_PREF.getInt("gyroSensitivity", 100))/100f;
+        PREF_GYRO_SAMPLE_RATE = DEFAULT_PREF.getInt("gyroSampleRate", 16);
+        PREF_GYRO_INVERT_X = DEFAULT_PREF.getBoolean("gyroInvertX", false);
+        PREF_GYRO_INVERT_Y = DEFAULT_PREF.getBoolean("gyroInvertY", false);
+        PREF_FORCE_VSYNC = DEFAULT_PREF.getBoolean("force_vsync", false);
+        PREF_BUTTON_ALL_CAPS = DEFAULT_PREF.getBoolean("buttonAllCaps", true);
+        PREF_DUMP_SHADERS = DEFAULT_PREF.getBoolean("dump_shaders", false);
+        PREF_DEADZONE_SCALE = DEFAULT_PREF.getInt("gamepad_deadzone_scale", 100)/100f;
+        PREF_BIG_CORE_AFFINITY = DEFAULT_PREF.getBoolean("bigCoreAffinity", false);
 
         String argLwjglLibname = "-Dorg.lwjgl.opengl.libname=";
         for (String arg : JREUtils.parseJavaArguments(PREF_CUSTOM_JAVA_ARGS)) {
             if (arg.startsWith(argLwjglLibname)) {
                 // purge arg
                 DEFAULT_PREF.edit().putString("javaArgs",
-                    PREF_CUSTOM_JAVA_ARGS.replace(arg, "")).commit();
+                    PREF_CUSTOM_JAVA_ARGS.replace(arg, "")).apply();
             }
         }
         if(DEFAULT_PREF.contains("defaultRuntime")) {
@@ -146,6 +135,9 @@ public class LauncherPreferences {
         if (deviceRam < 1024) return 300;
         if (deviceRam < 1536) return 450;
         if (deviceRam < 2048) return 600;
+        // Limit the max for 32 bits devices more harshly
+        if (is32BitsDevice()) return 700;
+
         if (deviceRam < 3064) return 936;
         if (deviceRam < 4096) return 1148;
         if (deviceRam < 6144) return 1536;

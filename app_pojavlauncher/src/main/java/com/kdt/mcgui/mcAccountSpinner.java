@@ -2,7 +2,6 @@ package com.kdt.mcgui;
 
 import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -30,11 +29,11 @@ import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.authenticator.listener.DoneListener;
 import net.kdt.pojavlaunch.authenticator.listener.ErrorListener;
 import net.kdt.pojavlaunch.authenticator.listener.ProgressListener;
+import net.kdt.pojavlaunch.authenticator.microsoft.PresentedException;
 import net.kdt.pojavlaunch.authenticator.microsoft.MicrosoftBackgroundLogin;
 import net.kdt.pojavlaunch.extra.ExtraConstants;
 import net.kdt.pojavlaunch.extra.ExtraCore;
 import net.kdt.pojavlaunch.extra.ExtraListener;
-import net.kdt.pojavlaunch.services.ProgressService;
 import net.kdt.pojavlaunch.value.MinecraftAccount;
 
 import java.io.File;
@@ -85,6 +84,13 @@ public class mcAccountSpinner extends AppCompatSpinner implements AdapterView.On
 
     private final DoneListener mDoneListener = account -> {
         Toast.makeText(getContext(), R.string.main_login_done, Toast.LENGTH_SHORT).show();
+
+        // Check if the account being added is not one that is already existing
+        // Like login twice on the same mc account...
+        for(String mcAccountName : mAccountList){
+            if(mcAccountName.equals(account.username)) return;
+        }
+
         mSelectecAccount = account;
         invalidate();
         mAccountList.add(account.username);
@@ -93,7 +99,12 @@ public class mcAccountSpinner extends AppCompatSpinner implements AdapterView.On
 
     private final ErrorListener mErrorListener = errorMessage -> {
         mLoginBarPaint.setColor(Color.RED);
-        Tools.showError(getContext(), errorMessage);
+        if(errorMessage instanceof PresentedException) {
+            PresentedException exception = (PresentedException) errorMessage;
+            Tools.showError(getContext(), exception.toString(getContext()), exception.getCause());
+        }else {
+            Tools.showError(getContext(), errorMessage);
+        }
         invalidate();
     };
 
@@ -148,7 +159,8 @@ public class mcAccountSpinner extends AppCompatSpinner implements AdapterView.On
         }
 
         pickAccount(position);
-        performLogin(mSelectecAccount);
+        if(mSelectecAccount != null)
+            performLogin(mSelectecAccount);
     }
 
     @Override
@@ -267,6 +279,16 @@ public class mcAccountSpinner extends AppCompatSpinner implements AdapterView.On
         if(position != -1){
             PojavProfile.setCurrentProfile(getContext(), mAccountList.get(position));
             selectedAccount = PojavProfile.getCurrentProfileContent(getContext(), mAccountList.get(position));
+
+
+            // WORKAROUND
+            // Account file corrupted due to previous versions having improper encoding
+            if (selectedAccount == null){
+                removeCurrentAccount();
+                pickAccount(-1);
+                setSelection(0);
+                return;
+            }
             setSelection(position);
         }else {
             // Get the current profile, or the first available profile if the wanted one is unavailable

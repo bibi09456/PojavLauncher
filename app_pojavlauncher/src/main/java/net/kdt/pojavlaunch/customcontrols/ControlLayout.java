@@ -1,19 +1,29 @@
 package net.kdt.pojavlaunch.customcontrols;
+
 import static android.content.Context.INPUT_METHOD_SERVICE;
 import static net.kdt.pojavlaunch.Tools.currentDisplayMetrics;
 
-import android.content.*;
-import android.util.*;
-import android.view.*;
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.os.Build;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.*;
-import com.google.gson.*;
-import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 
-import net.kdt.pojavlaunch.*;
+import com.google.gson.JsonSyntaxException;
+import com.kdt.pickafile.FileListView;
+import com.kdt.pickafile.FileSelectedListener;
+
+import net.kdt.pojavlaunch.MinecraftGLSurface;
+import net.kdt.pojavlaunch.R;
+import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.customcontrols.buttons.ControlButton;
 import net.kdt.pojavlaunch.customcontrols.buttons.ControlDrawer;
 import net.kdt.pojavlaunch.customcontrols.buttons.ControlInterface;
@@ -21,18 +31,30 @@ import net.kdt.pojavlaunch.customcontrols.buttons.ControlSubButton;
 import net.kdt.pojavlaunch.customcontrols.handleview.ActionRow;
 import net.kdt.pojavlaunch.customcontrols.handleview.ControlHandleView;
 import net.kdt.pojavlaunch.customcontrols.handleview.EditControlPopup;
+import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 
-import net.kdt.pojavlaunch.prefs.*;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class ControlLayout extends FrameLayout {
 	protected CustomControls mLayout;
+	/* Accessible when inside the game by ControlInterface implementations, cached for perf. */
+	private MinecraftGLSurface mGameSurface = null;
+
+	/* Cache to buttons for performance purposes */
+	private List<ControlInterface> mButtons;
 	private boolean mModifiable = false;
-	private CustomControlsActivity mActivity;
+	private boolean mIsModified;
 	private boolean mControlVisible = false;
 
 	private EditControlPopup mControlPopup = null;
 	private ControlHandleView mHandleView;
-	public ActionRow actionRow = null;
+	private ControlButtonMenuListener mMenuListener;
+	public ActionRow mActionRow = null;
+	public String mLayoutFileName;
 
 	public ControlLayout(Context ctx) {
 		super(ctx);
@@ -47,6 +69,7 @@ public class ControlLayout extends FrameLayout {
 		CustomControls layout = LayoutConverter.loadAndConvertIfNecessary(jsonPath);
 		if(layout != null) {
 			loadLayout(layout);
+			updateLoadedFileName(jsonPath);
 			return;
 		}
 
@@ -54,9 +77,9 @@ public class ControlLayout extends FrameLayout {
 	}
 
 	public void loadLayout(CustomControls controlLayout) {
-		if(actionRow == null){
-			actionRow = new ActionRow(getContext());
-			addView(actionRow);
+		if(mActionRow == null){
+			mActionRow = new ActionRow(getContext());
+			addView(mActionRow);
 		}
 
 		removeAllButtons();
@@ -87,6 +110,8 @@ public class ControlLayout extends FrameLayout {
 		mLayout.scaledAt = LauncherPreferences.PREF_BUTTONSIZE;
 
 		setModified(false);
+		mButtons = null;
+		getButtonChildren(); // Force refresh
 	} // loadLayout
 
 	//CONTROL BUTTON
@@ -177,10 +202,6 @@ public class ControlLayout extends FrameLayout {
 		setModified(false);
 	}
 
-	public void setActivity(CustomControlsActivity activity) {
-		mActivity = activity;
-	}
-
 	public void toggleControlVisible(){
 		mControlVisible = !mControlVisible;
 		setControlVisible(mControlVisible);
@@ -204,12 +225,9 @@ public class ControlLayout extends FrameLayout {
 	}
 
 	public void setModifiable(boolean isModifiable) {
-		if(isModifiable){
-		}else {
-			if(mModifiable)
-				removeEditWindow();
+		if(!isModifiable && mModifiable){
+			removeEditWindow();
 		}
-
 		mModifiable = isModifiable;
 	}
 
@@ -218,18 +236,20 @@ public class ControlLayout extends FrameLayout {
 	}
 
 	public void setModified(boolean isModified) {
-		if (mActivity != null) mActivity.isModified = isModified;
-
+		mIsModified = isModified;
 	}
 
-	public ArrayList<ControlInterface> getButtonChildren(){
-		ArrayList<ControlInterface> children = new ArrayList<>();
-		for(int i=0; i<getChildCount(); ++i){
-			View v = getChildAt(i);
-			if(v instanceof ControlInterface)
-				children.add(((ControlInterface) v));
+	public List<ControlInterface> getButtonChildren(){
+		if(mModifiable || mButtons == null){
+			mButtons = new ArrayList<>();
+			for(int i=0; i<getChildCount(); ++i){
+				View v = getChildAt(i);
+				if(v instanceof ControlInterface)
+					mButtons.add(((ControlInterface) v));
+			}
 		}
-		return children;
+
+		return mButtons;
 	}
 
 	public void refreshControlButtonPositions(){
@@ -286,51 +306,64 @@ public class ControlLayout extends FrameLayout {
 	}
 
 
-	HashMap<View, ControlInterface> mapTable = new HashMap<>();
+	final HashMap<View, ControlInterface> mapTable = new HashMap<>();
+
 	//While this is called onTouch, this should only be called from a ControlButton.
-	public boolean onTouch(View v, MotionEvent ev) {
+	public void onTouch(View v, MotionEvent ev) {
 		ControlInterface lastControlButton = mapTable.get(v);
 
+		// Map location to screen coordinates
+		ev.offsetLocation(v.getX(), v.getY());
+
+
 		//Check if the action is cancelling, reset the lastControl button associated to the view
-		if(ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL){
-			if(lastControlButton != null) lastControlButton.sendKeyPresses(false);
+		if (ev.getActionMasked() == MotionEvent.ACTION_UP
+				|| ev.getActionMasked() == MotionEvent.ACTION_CANCEL
+				|| ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+			if (lastControlButton != null) lastControlButton.sendKeyPresses(false);
 			mapTable.put(v, null);
-			return true;
+			return;
 		}
 
-		if(ev.getActionMasked() != MotionEvent.ACTION_MOVE) return false;
+		if (ev.getActionMasked() != MotionEvent.ACTION_MOVE) return;
+
 
 		//Optimization pass to avoid looking at all children again
-		if(lastControlButton != null){
-			if(	ev.getRawX() > lastControlButton.getControlView().getX() && ev.getRawX() < lastControlButton.getControlView().getX() + lastControlButton.getControlView().getWidth() &&
-					ev.getRawY() > lastControlButton.getControlView().getY() && ev.getRawY() < lastControlButton.getControlView().getY() + lastControlButton.getControlView().getHeight()){
-				return true;
+		if (lastControlButton != null) {
+			System.out.println("last control button check" + ev.getX() + "-" + ev.getY() + "-" + lastControlButton.getControlView().getX() + "-" + lastControlButton.getControlView().getY());
+			if (ev.getX() > lastControlButton.getControlView().getX()
+					&& ev.getX() < lastControlButton.getControlView().getX() + lastControlButton.getControlView().getWidth()
+					&& ev.getY() > lastControlButton.getControlView().getY()
+					&& ev.getY() < lastControlButton.getControlView().getY() + lastControlButton.getControlView().getHeight()) {
+				return;
 			}
 		}
 
 		//Release last keys
 		if (lastControlButton != null) lastControlButton.sendKeyPresses(false);
-		mapTable.put(v, null);
+		mapTable.remove(v);
 
-		//Look for another SWIPEABLE button
-		for(ControlInterface button : getButtonChildren()){
-			if(!button.getProperties().isSwipeable) continue;
+		// Update the state of all swipeable buttons
+		for (ControlInterface button : getButtonChildren()) {
+			if (!button.getProperties().isSwipeable) continue;
 
-			if(	ev.getRawX() > button.getControlView().getX() && ev.getRawX() < button.getControlView().getX() + button.getControlView().getWidth() &&
-					ev.getRawY() > button.getControlView().getY() && ev.getRawY() < button.getControlView().getY() + button.getControlView().getHeight()){
+			if (ev.getX() > button.getControlView().getX()
+					&& ev.getX() < button.getControlView().getX() + button.getControlView().getWidth()
+					&& ev.getY() > button.getControlView().getY()
+					&& ev.getY() < button.getControlView().getY() + button.getControlView().getHeight()) {
 
 				//Press the new key
-				if(!button.equals(lastControlButton)){
+				if (!button.equals(lastControlButton)) {
 					button.sendKeyPresses(true);
-
 					mapTable.put(v, button);
+					return;
 				}
-				return true;
+
 			}
 		}
-		return false;
 	}
 
+	@SuppressLint("ClickableViewAccessibility")
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
 		if (mModifiable && event.getActionMasked() != MotionEvent.ACTION_UP || mControlPopup == null)
@@ -341,7 +374,7 @@ public class ControlLayout extends FrameLayout {
 		// When the input window cannot be hidden, it returns false
 		if(!imm.hideSoftInputFromWindow(getWindowToken(), 0)){
 			if(mControlPopup.disappearLayer()){
-				actionRow.setFollowedButton(null);
+				mActionRow.setFollowedButton(null);
 				mHandleView.hide();
 			}
 		}
@@ -358,7 +391,7 @@ public class ControlLayout extends FrameLayout {
 			mControlPopup.disappear();
 		}
 
-		if(actionRow != null) actionRow.setFollowedButton(null);
+		if(mActionRow != null) mActionRow.setFollowedButton(null);
 		if(mHandleView != null) mHandleView.hide();
 	}
 
@@ -366,5 +399,161 @@ public class ControlLayout extends FrameLayout {
 		try {
 			mLayout.save(path);
 		} catch (IOException e) {Log.e("ControlLayout", "Failed to save the layout at:" + path);}
+	}
+
+
+	public boolean hasMenuButton() {
+		for(ControlInterface controlInterface : getButtonChildren()){
+			for (int keycode : controlInterface.getProperties().keycodes) {
+				if (keycode == ControlData.SPECIALBTN_MENU) return true;
+			}
+		}
+		return false;
+	}
+
+	public void setMenuListener(ControlButtonMenuListener menuListener) {
+		this.mMenuListener = menuListener;
+	}
+
+	public void notifyAppMenu() {
+		if(mMenuListener != null) mMenuListener.onClickedMenu();
+	}
+
+	/** Cached getter for perf purposes */
+	public MinecraftGLSurface getGameSurface(){
+		if(mGameSurface == null){
+			mGameSurface = findViewById(R.id.main_game_render_view);
+		}
+		return mGameSurface;
+	}
+
+	public void askToExit(EditorExitable editorExitable) {
+		if(mIsModified) {
+			openSaveDialog(editorExitable);
+		}else{
+			openExitDialog(editorExitable);
+		}
+	}
+
+	public void updateLoadedFileName(String path) {
+		path = path.replace(Tools.CTRLMAP_PATH, ".");
+		path = path.substring(0, path.length() - 5);
+		mLayoutFileName = path;
+	}
+
+	public String saveToDirectory(String name) throws Exception{
+		String jsonPath = Tools.CTRLMAP_PATH + "/" + name + ".json";
+		saveLayout(jsonPath);
+		return jsonPath;
+	}
+
+	class OnClickExitListener implements View.OnClickListener {
+		private final AlertDialog mDialog;
+		private final EditText mEditText;
+		private final EditorExitable mListener;
+
+		public OnClickExitListener(AlertDialog mDialog, EditText mEditText, EditorExitable mListener) {
+			this.mDialog = mDialog;
+			this.mEditText = mEditText;
+			this.mListener = mListener;
+		}
+
+		@Override
+		public void onClick(View v) {
+			Context context = v.getContext();
+			if (mEditText.getText().toString().isEmpty()) {
+				mEditText.setError(context.getString(R.string.global_error_field_empty));
+				return;
+			}
+			try {
+				String jsonPath = saveToDirectory(mEditText.getText().toString());
+				Toast.makeText(context, context.getString(R.string.global_save) + ": " + jsonPath, Toast.LENGTH_SHORT).show();
+				mDialog.dismiss();
+				if(mListener != null) mListener.exitEditor();
+			} catch (Throwable th) {
+				Tools.showError(context, th, mListener != null);
+			}
+		}
+	}
+
+	public void openSaveDialog(EditorExitable editorExitable) {
+		final Context context = getContext();
+		final EditText edit = new EditText(context);
+		edit.setSingleLine();
+		edit.setText(mLayoutFileName);
+
+		AlertDialog.Builder builder = new AlertDialog.Builder(context);
+		builder.setTitle(R.string.global_save);
+		builder.setView(edit);
+		builder.setPositiveButton(android.R.string.ok, null);
+		builder.setNegativeButton(android.R.string.cancel, null);
+		if(editorExitable != null) builder.setNeutralButton(R.string.global_save_and_exit, null);
+		final AlertDialog dialog = builder.create();
+		dialog.setOnShowListener(dialogInterface -> {
+			dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+					.setOnClickListener(new OnClickExitListener(dialog, edit, null));
+			if(editorExitable != null) dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+					.setOnClickListener(new OnClickExitListener(dialog, edit, editorExitable));
+		});
+		dialog.show();
+	}
+
+	public void openLoadDialog() {
+		AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+		builder.setTitle(R.string.global_load);
+		builder.setPositiveButton(android.R.string.cancel, null);
+
+		final AlertDialog dialog = builder.create();
+		FileListView flv = new FileListView(dialog, "json");
+		if(Build.VERSION.SDK_INT < 29)flv.listFileAt(new File(Tools.CTRLMAP_PATH));
+		else flv.lockPathAt(new File(Tools.CTRLMAP_PATH));
+		flv.setFileSelectedListener(new FileSelectedListener(){
+
+			@Override
+			public void onFileSelected(File file, String path) {
+				try {
+					loadLayout(path);
+				}catch (IOException e) {
+					Tools.showError(getContext(), e);
+				}
+				dialog.dismiss();
+			}
+		});
+		dialog.setView(flv);
+		dialog.show();
+	}
+
+	public void openSetDefaultDialog() {
+		AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+		builder.setTitle(R.string.customctrl_selectdefault);
+		builder.setPositiveButton(android.R.string.cancel, null);
+
+		final AlertDialog dialog = builder.create();
+		FileListView flv = new FileListView(dialog, "json");
+		flv.lockPathAt(new File(Tools.CTRLMAP_PATH));
+		flv.setFileSelectedListener(new FileSelectedListener(){
+
+			@Override
+			public void onFileSelected(File file, String path) {
+				try {
+					LauncherPreferences.DEFAULT_PREF.edit().putString("defaultCtrl", path).apply();
+					LauncherPreferences.PREF_DEFAULTCTRL_PATH = path;loadLayout(path);
+				}catch (IOException|JsonSyntaxException e) {
+					Tools.showError(getContext(), e);
+				}
+				dialog.dismiss();
+			}
+		});
+		dialog.setView(flv);
+		dialog.show();
+	}
+
+	public void openExitDialog(EditorExitable exitListener) {
+		AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+		builder.setTitle(R.string.customctrl_editor_exit_title);
+		builder.setMessage(R.string.customctrl_editor_exit_msg);
+		builder.setPositiveButton(R.string.global_yes, (d,w)->exitListener.exitEditor());
+		builder.setNegativeButton(R.string.global_no, (d,w)->{});
+		builder.show();
 	}
 }
