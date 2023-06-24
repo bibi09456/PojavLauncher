@@ -141,7 +141,7 @@ public class AsyncMinecraftDownloader {
                     continue;
                 }
 
-                String libArtifact = Tools.artifactToPath(libItem.name);
+                String libArtifact = Tools.artifactToPath(libItem);
                 outLib = new File(Tools.DIR_HOME_LIBRARY + "/" + libArtifact);
                 outLib.getParentFile().mkdirs();
 

@@ -184,6 +184,7 @@ public final class Tools {
         String launchClassPath = generateLaunchClassPath(versionInfo, versionId);
 
         List<String> javaArgList = new ArrayList<>();
+        javaArgList.add("-Dorg.lwjgl.util.NoChecks=true");
 
         getCacioJavaArgs(javaArgList, runtime.javaVersion == 8);
 
@@ -383,15 +384,13 @@ public final class Tools {
         return strList.toArray(new String[0]);
     }
 
-    public static String artifactToPath(String name) {
-        int idx = name.indexOf(":");
-        assert idx != -1;
-        int idx2 = name.indexOf(":", idx+1);
-        assert idx2 != -1;
-        String group = name.substring(0, idx);
-        String artifact = name.substring(idx+1, idx2);
-        String version = name.substring(idx2+1).replace(':','-');
-        return group.replaceAll("\\.", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".jar";
+    public static String artifactToPath(DependentLibrary library) {
+        if (library.downloads != null &&
+            library.downloads.artifact != null &&
+            library.downloads.artifact.path != null)
+            return library.downloads.artifact.path;
+        String[] libInfos = library.name.split(":");
+        return libInfos[0].replaceAll("\\.", "/") + "/" + libInfos[1] + "/" + libInfos[2] + "/" + libInfos[1] + "-" + libInfos[2] + ".jar";
     }
 
     public static String getPatchedFile(String version) {
@@ -616,7 +615,7 @@ public final class Tools {
         List<String> libDir = new ArrayList<>();
         for (DependentLibrary libItem: info.libraries) {
             if(!checkRules(libItem.rules)) continue;
-            libDir.add(Tools.DIR_HOME_LIBRARY + "/" + Tools.artifactToPath(libItem.name));
+            libDir.add(Tools.DIR_HOME_LIBRARY + "/" + artifactToPath(libItem));
         }
         return libDir.toArray(new String[0]);
     }
