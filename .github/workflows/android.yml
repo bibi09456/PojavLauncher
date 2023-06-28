@@ -26,11 +26,11 @@ jobs:
           distribution: 'temurin'
           java-version: '8'
 
-    - name: Get gl4es latest commit hash
-      id: gl4es-sha
-      run: |
-        echo "sha=$(git ls-remote https://github.com/PojavLauncherTeam/gl4es-114-extra refs/heads/master | grep -io '^\S*')" >> $GITHUB_OUTPUT
-      shell: bash
+      - name: Get gl4es latest commit hash
+        id: gl4es-sha
+        run: |
+          echo "sha=$(git ls-remote https://github.com/PojavLauncherTeam/gl4es-114-extra refs/heads/master | grep -io '^\S*')" >> $GITHUB_OUTPUT
+        shell: bash
       
       - name: Cache gl4es
         uses: actions/cache@v3
@@ -39,12 +39,12 @@ jobs:
           path: gl4es/libs
           key: gl4es-holy-android-shared-${{ steps.gl4es-sha.outputs.sha }}
 
-    - name: Get gl4es
-      if: steps.gl4es-cache.outputs.cache-hit != 'true'
-      uses: actions/checkout@v3
-      with:
-        repository: 'PojavLauncherTeam/gl4es-114-extra'
-        path: 'gl4es'
+      - name: Get gl4es
+        if: steps.gl4es-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v3
+        with:
+          repository: 'PojavLauncherTeam/gl4es-114-extra'
+          path: 'gl4es'
 
       - name: Build gl4es
         if: steps.gl4es-cache.outputs.cache-hit != 'true'
