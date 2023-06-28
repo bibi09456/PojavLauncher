@@ -26,27 +26,25 @@ jobs:
           distribution: 'temurin'
           java-version: '8'
 
-      - name: Get gl4es latest commit hash
-        id: gl4es-sha
-        run: |
-          echo "sha=$(git ls-remote https://artdeell:${HGL4ES_TOKEN}@github.com/PojavLauncherTeam/gl4es_extra_extra refs/heads/progressive_upstream_v2 | grep -io '^\S*')" >> $GITHUB_OUTPUT
-        shell: bash
+    - name: Get gl4es latest commit hash
+      id: gl4es-sha
+      run: |
+        echo "sha=$(git ls-remote https://github.com/PojavLauncherTeam/gl4es-114-extra refs/heads/master | grep -io '^\S*')" >> $GITHUB_OUTPUT
+      shell: bash
       
       - name: Cache gl4es
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: gl4es-cache
         with:
           path: gl4es/libs
           key: gl4es-holy-android-shared-${{ steps.gl4es-sha.outputs.sha }}
 
-      - name: Get gl4es
-        if: steps.gl4es-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v3
-        with:
-          token: '${{secrets.READ_HGL4ES_EXTRA}}'
-          repository: 'PojavLauncherTeam/gl4es_extra_extra'
-          ref: 'progressive_upstream_v2'
-          path: 'gl4es'
+    - name: Get gl4es
+      if: steps.gl4es-cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v3
+      with:
+        repository: 'PojavLauncherTeam/gl4es-114-extra'
+        path: 'gl4es'
 
       - name: Build gl4es
         if: steps.gl4es-cache.outputs.cache-hit != 'true'
