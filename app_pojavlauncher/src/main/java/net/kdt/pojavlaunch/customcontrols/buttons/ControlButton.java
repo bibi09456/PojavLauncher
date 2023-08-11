@@ -31,6 +31,9 @@ public class ControlButton extends TextView implements ControlInterface {
     protected ControlData mProperties;
     private final ControlLayout mControlLayout;
 
+    /* Cache value from the ControlData radius for drawing purposes */
+    private float mComputedRadius;
+
     protected boolean mIsToggled = false;
     protected boolean mIsPointerOutOfBounds = false;
 
@@ -61,6 +64,7 @@ public class ControlButton extends TextView implements ControlInterface {
     public void setProperties(ControlData properties, boolean changePos) {
         mProperties = properties;
         ControlInterface.super.setProperties(properties, changePos);
+        mComputedRadius = ControlInterface.super.computeCornerRadius(mProperties.cornerRadius);
 
         if (mProperties.isToggle) {
             //For the toggle layer
@@ -76,16 +80,11 @@ public class ControlButton extends TextView implements ControlInterface {
         setText(properties.name);
     }
 
-    public void setVisible(boolean isVisible){
-        if(mProperties.isHideable)
-            setVisibility(isVisible ? VISIBLE : GONE);
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (mIsToggled || (!mProperties.isToggle && isActivated()))
-            canvas.drawRoundRect(0, 0, getWidth(), getHeight(), mProperties.cornerRadius, mProperties.cornerRadius, mRectPaint);
+            canvas.drawRoundRect(0, 0, getWidth(), getHeight(), mComputedRadius, mComputedRadius, mRectPaint);
     }
 
 
